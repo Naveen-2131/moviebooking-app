@@ -232,12 +232,7 @@ const autoGenerateShowtimes = async () => {
             return;
         }
 
-        console.log('[SHOWTIME SYNC] Showtime auto-generation disabled to prevent memory issues.');
-        console.log('[SHOWTIME SYNC] Please generate showtimes manually from the admin panel.');
-        return;
-
-        /* DISABLED TO PREVENT MEMORY OVERFLOW ON FREE TIER
-        console.log('[SHOWTIME SYNC] No showtimes found. Generating...');
+        console.log('[SHOWTIME SYNC] No showtimes found. Generating with memory-efficient approach...');
 
         // Get all movies and theaters
         const movies = await Movie.find();
@@ -252,19 +247,23 @@ const autoGenerateShowtimes = async () => {
         if (theaters.length === 0) {
             console.log('[SHOWTIME SYNC] Creating default theaters...');
             const defaultTheaters = [
-                { name: 'PVR Cinemas', location: 'Chennai', screens: [{ name: 'Screen 1', capacity: 100 }, { name: 'Screen 2', capacity: 120 }] },
-                { name: 'Sathyam Cinemas', location: 'Chennai', screens: [{ name: 'Sathyam', capacity: 200 }, { name: 'Seasons', capacity: 150 }] },
-                { name: 'IMAX', location: 'Chennai', screens: [{ name: 'IMAX Screen', capacity: 250 }] }
+                { name: 'PVR Cinemas', location: 'Chennai', screens: [{ name: 'Screen 1', seats: 100 }, { name: 'Screen 2', seats: 120 }] },
+                { name: 'Sathyam Cinemas', location: 'Chennai', screens: [{ name: 'Sathyam', seats: 200 }, { name: 'Seasons', seats: 150 }] },
+                { name: 'IMAX', location: 'Chennai', screens: [{ name: 'IMAX Screen', seats: 250 }] }
             ];
             await Theater.insertMany(defaultTheaters);
         }
 
         const allTheaters = await Theater.find();
         const today = new Date();
-        const showtimes = [];
 
-        // Generate showtimes for the next 7 days
-        for (let i = 0; i < 7; i++) {
+        // MEMORY EFFICIENT: Process in smaller batches
+        // Generate only 3 days instead of 7, and insert in batches
+        const daysToGenerate = 3; // Reduced from 7
+        const batchSize = 50; // Insert 50 showtimes at a time
+        let totalGenerated = 0;
+
+        for (let i = 0; i < daysToGenerate; i++) {
             const baseDate = new Date(today);
             baseDate.setDate(today.getDate() + i);
             baseDate.setHours(0, 0, 0, 0);
@@ -273,45 +272,60 @@ const autoGenerateShowtimes = async () => {
                 for (const theater of allTheaters) {
                     const screen = theater.screens[0];
 
-                    // Generate seats
-                    const seats = [];
-                    const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-                    const seatsPerRow = 10;
+                    // Generate seats more efficiently
+                    const generateSeats = (capacity, price = 150) => {
+                        const seats = [];
+                        const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+                        const seatsPerRow = Math.ceil(capacity / rows.length);
 
-                    for (let r = 0; r < rows.length; r++) {
-                        for (let s = 1; s <= seatsPerRow; s++) {
-                            if (seats.length >= screen.capacity) break;
-                            seats.push({
-                                row: rows[r],
-                                number: s,
-                                isBooked: false,
-                                price: 150
-                            });
+                        for (let r = 0; r < rows.length && seats.length < capacity; r++) {
+                            for (let s = 1; s <= seatsPerRow && seats.length < capacity; s++) {
+                                seats.push({
+                                    row: rows[r],
+                                    number: s,
+                                    isBooked: false,
+                                    price
+                                });
+                            }
                         }
-                    }
+                        return seats;
+                    };
 
-                    // 4 Shows per day: 10 AM, 2 PM, 6 PM, 10 PM
-                    const showTimes = [10, 14, 18, 22];
+                    // 3 Shows per day instead of 4: 2 PM, 6 PM, 10 PM
+                    const showTimes = [14, 18, 22];
+                    const showtimeBatch = [];
 
                     for (const hour of showTimes) {
                         const showTimeDate = new Date(baseDate);
                         showTimeDate.setHours(hour, 0, 0, 0);
 
-                        showtimes.push({
+                        showtimeBatch.push({
                             movie: movie._id,
                             theater: theater._id,
                             screen: screen.name,
                             startTime: showTimeDate,
-                            seats: [...seats]
+                            seats: generateSeats(Math.min(screen.seats, 80)) // Limit to 80 seats max
                         });
+
+                        // Insert in batches to avoid memory overflow
+                        if (showtimeBatch.length >= batchSize) {
+                            await Showtime.insertMany(showtimeBatch);
+                            totalGenerated += showtimeBatch.length;
+                            showtimeBatch.length = 0; // Clear array
+                            console.log(`[SHOWTIME SYNC] Progress: ${totalGenerated} showtimes created...`);
+                        }
+                    }
+
+                    // Insert remaining showtimes
+                    if (showtimeBatch.length > 0) {
+                        await Showtime.insertMany(showtimeBatch);
+                        totalGenerated += showtimeBatch.length;
                     }
                 }
             }
         }
 
-        await Showtime.insertMany(showtimes);
-        console.log(`[SHOWTIME SYNC] Successfully generated ${showtimes.length} showtimes for ${movies.length} movies.`);
-        */
+        console.log(`[SHOWTIME SYNC] Successfully generated ${totalGenerated} showtimes for ${movies.length} movies.`);
 
     } catch (error) {
         console.error('[SHOWTIME SYNC] Error generating showtimes:', error);
