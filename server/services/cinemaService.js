@@ -232,6 +232,11 @@ const autoGenerateShowtimes = async () => {
             return;
         }
 
+        console.log('[SHOWTIME SYNC] Showtime auto-generation disabled to prevent memory issues.');
+        console.log('[SHOWTIME SYNC] Please generate showtimes manually from the admin panel.');
+        return;
+
+        /* DISABLED TO PREVENT MEMORY OVERFLOW ON FREE TIER
         console.log('[SHOWTIME SYNC] No showtimes found. Generating...');
 
         // Get all movies and theaters
@@ -306,6 +311,7 @@ const autoGenerateShowtimes = async () => {
 
         await Showtime.insertMany(showtimes);
         console.log(`[SHOWTIME SYNC] Successfully generated ${showtimes.length} showtimes for ${movies.length} movies.`);
+        */
 
     } catch (error) {
         console.error('[SHOWTIME SYNC] Error generating showtimes:', error);
